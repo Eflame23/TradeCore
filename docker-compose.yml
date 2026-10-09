@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: tradecore-postgres
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-tradecore}
+      POSTGRES_USER: ${POSTGRES_USER:-tradecore_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev_secret_password_unsuitable_for_prod}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
