@@ -1,0 +1,10 @@
+spring:
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+
+logging:
+  level:
+    com.tradecore: DEBUG
+    org.springframework.jdbc.core.JdbcTemplate: DEBUG
