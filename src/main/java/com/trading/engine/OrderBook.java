@@ -1,6 +1,7 @@
 package com.trading.engine;
 
 import com.trading.common.Order;
+import com.trading.common.OrderType;
 import com.trading.common.Side;
 import com.trading.common.Trade;
 
@@ -9,16 +10,11 @@ import java.time.Instant;
 import java.util.*;
 
 /**
- * Limit order book with PRICE-TIME priority.
+ * Limit and Market order book with PRICE-TIME priority and Self-Trade Prevention (STP).
  *
  *  - bids: TreeMap sorted HIGH -> LOW   (best bid = firstKey)
  *  - asks: TreeMap sorted LOW  -> HIGH  (best ask = firstKey)
  *  - each price level is a FIFO Deque  => time priority inside a price
- *
- * TreeMap is a red-black tree: best-price lookup / insert / remove are O(log P),
- * where P = number of distinct price levels.
- *
- * NOT thread-safe by itself. OrderBookMatchingEngine wraps it with a lock.
  */
 public class OrderBook {
 
@@ -32,11 +28,13 @@ public class OrderBook {
     private final TreeMap<BigDecimal, Deque<Resting>> bids = new TreeMap<>(Comparator.reverseOrder());
     private final TreeMap<BigDecimal, Deque<Resting>> asks = new TreeMap<>();
 
-    /** Match an incoming order against the book; rest any unfilled remainder. */
+    /** Match an incoming order against the book; rest any unfilled remainder for LIMIT orders. */
     public List<Trade> match(Order incoming) {
         if (incoming.qty() <= 0) throw new IllegalArgumentException("qty must be > 0");
-        if (incoming.price() == null || incoming.price().signum() <= 0)
-            throw new IllegalArgumentException("price must be > 0");
+        boolean isMarket = incoming.orderType() == OrderType.MARKET;
+        if (!isMarket && (incoming.price() == null || incoming.price().signum() <= 0)) {
+            throw new IllegalArgumentException("LIMIT order price must be > 0");
+        }
 
         boolean isBuy = incoming.side() == Side.BUY;
         TreeMap<BigDecimal, Deque<Resting>> opposite = isBuy ? asks : bids;
@@ -47,18 +45,26 @@ public class OrderBook {
             Map.Entry<BigDecimal, Deque<Resting>> best = opposite.firstEntry();
             BigDecimal bestPrice = best.getKey();
 
-            // Does the incoming limit price cross the best opposite price?
-            boolean crosses = isBuy ? incoming.price().compareTo(bestPrice) >= 0
-                                    : incoming.price().compareTo(bestPrice) <= 0;
-            if (!crosses) break;
+            // Check price crossing for LIMIT orders (MARKET orders always cross available liquidity)
+            if (!isMarket) {
+                boolean crosses = isBuy ? incoming.price().compareTo(bestPrice) >= 0
+                                        : incoming.price().compareTo(bestPrice) <= 0;
+                if (!crosses) break;
+            }
 
             Deque<Resting> level = best.getValue();
             while (taker.remaining > 0 && !level.isEmpty()) {
-                Resting maker = level.peekFirst();               // oldest first = time priority
+                Resting maker = level.peekFirst();
+
+                // Self-Trade Prevention (STP): Prevent user from matching with their own order
+                if (maker.order.userId().equalsIgnoreCase(taker.order.userId())) {
+                    level.pollFirst(); // Cancel resting maker order to prevent self-trade
+                    continue;
+                }
+
                 long fillQty = Math.min(taker.remaining, maker.remaining);
 
-                // Known limitation: self-trade prevention not implemented in the prototype.
-                trades.add(buildTrade(taker.order, maker.order, bestPrice, fillQty)); // resting order's price
+                trades.add(buildTrade(taker.order, maker.order, bestPrice, fillQty)); // execution at resting order's price
                 taker.remaining -= fillQty;
                 maker.remaining -= fillQty;
                 if (maker.remaining == 0) level.pollFirst();
@@ -66,8 +72,8 @@ public class OrderBook {
             if (level.isEmpty()) opposite.remove(bestPrice);     // drop empty price level
         }
 
-        // Rest the unfilled remainder on our own side of the book
-        if (taker.remaining > 0) {
+        // Rest unfilled remainder ONLY if it is a LIMIT order with a valid price
+        if (taker.remaining > 0 && !isMarket && incoming.price() != null && incoming.price().signum() > 0) {
             TreeMap<BigDecimal, Deque<Resting>> own = isBuy ? bids : asks;
             own.computeIfAbsent(incoming.price(), p -> new ArrayDeque<>()).addLast(taker);
         }
@@ -82,7 +88,7 @@ public class OrderBook {
                          buy.userId(), sell.userId(), price, qty, Instant.now());
     }
 
-    /** Cancel a resting order by id. Returns true if found. O(n) - fine for prototype. */
+    /** Cancel a resting order by id. Returns true if found. */
     public boolean cancel(String orderId) {
         return removeFrom(bids, orderId) || removeFrom(asks, orderId);
     }

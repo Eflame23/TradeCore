@@ -6,6 +6,7 @@ import com.tradecore.risk.service.RiskService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
@@ -18,6 +19,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(RiskOrderSubmissionExampleController.class)
+@AutoConfigureMockMvc(addFilters = false)
 @DisplayName("RiskOrderSubmissionExampleController WebMvc Tests")
 class RiskOrderSubmissionExampleControllerTest {
 
@@ -42,7 +44,7 @@ class RiskOrderSubmissionExampleControllerTest {
                 }
                 """;
 
-        mockMvc.perform(post("/api/orders")
+        mockMvc.perform(post("/api/risk-example/orders")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json))
                 .andExpect(status().isOk())
@@ -66,7 +68,7 @@ class RiskOrderSubmissionExampleControllerTest {
                 }
                 """;
 
-        mockMvc.perform(post("/api/orders")
+        mockMvc.perform(post("/api/risk-example/orders")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json))
                 .andExpect(status().isBadRequest())
@@ -90,7 +92,7 @@ class RiskOrderSubmissionExampleControllerTest {
                 }
                 """;
 
-        mockMvc.perform(post("/api/orders")
+        mockMvc.perform(post("/api/risk-example/orders")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json))
                 .andExpect(status().isTooManyRequests())
@@ -114,7 +116,7 @@ class RiskOrderSubmissionExampleControllerTest {
                 }
                 """;
 
-        mockMvc.perform(post("/api/orders")
+        mockMvc.perform(post("/api/risk-example/orders")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json))
                 .andExpect(status().isServiceUnavailable())
@@ -138,7 +140,7 @@ class RiskOrderSubmissionExampleControllerTest {
                 }
                 """;
 
-        mockMvc.perform(post("/api/orders")
+        mockMvc.perform(post("/api/risk-example/orders")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json))
                 .andExpect(status().isUnprocessableEntity())
@@ -162,7 +164,7 @@ class RiskOrderSubmissionExampleControllerTest {
                 }
                 """;
 
-        mockMvc.perform(post("/api/orders")
+        mockMvc.perform(post("/api/risk-example/orders")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json))
                 .andExpect(status().isUnprocessableEntity())

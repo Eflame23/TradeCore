@@ -1,8 +1,12 @@
--- Seed test accounts only if they do not already exist (ON CONFLICT DO NOTHING)
--- Alice: USD 10,000 and BTC 5
--- Bob: USD 2,000 and BTC 10
+-- Seed test accounts using standard ANSI SQL
 INSERT INTO accounts (user_id, cash_balance, asset_balance)
-VALUES
-    ('alice', 10000.00000000, 5.00000000),
-    ('bob', 2000.00000000, 10.00000000)
-ON CONFLICT (user_id) DO NOTHING;
+SELECT 'alice', 1000000.00000000, 1000.00000000
+WHERE NOT EXISTS (SELECT 1 FROM accounts WHERE user_id = 'alice');
+
+INSERT INTO accounts (user_id, cash_balance, asset_balance)
+SELECT 'bob', 1000000.00000000, 1000.00000000
+WHERE NOT EXISTS (SELECT 1 FROM accounts WHERE user_id = 'bob');
+
+INSERT INTO accounts (user_id, cash_balance, asset_balance)
+SELECT 'charlie', 1000000.00000000, 1000.00000000
+WHERE NOT EXISTS (SELECT 1 FROM accounts WHERE user_id = 'charlie');

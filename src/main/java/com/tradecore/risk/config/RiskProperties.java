@@ -12,20 +12,25 @@ import java.math.BigDecimal;
 public class RiskProperties {
 
     /**
-     * Maximum quantity allowed for a single order. Defaults to 10 (e.g. 10 BTC).
+     * Maximum quantity allowed for a single order. Defaults to 1,000,000.
      */
-    private long maxOrderQuantity = 10L;
+    private long maxOrderQuantity = 1_000_000L;
 
     /**
-     * Maximum absolute net position allowed for any single user. Defaults to 100 (e.g. 100 BTC).
+     * Maximum absolute net position allowed for any single user. Defaults to 10,000,000.
      */
-    private BigDecimal maxAbsolutePosition = new BigDecimal("100");
+    private BigDecimal maxAbsolutePosition = new BigDecimal("10000000");
+
+    /**
+     * Maximum percentage price deviation allowed from reference market price (e.g. 50%).
+     */
+    private BigDecimal maxPriceBandPercent = new BigDecimal("50");
 
     /**
      * Maximum number of order submissions allowed per user within the rate limit window.
-     * Defaults to 20.
+     * Defaults to 1000.
      */
-    private int rateLimitCapacity = 20;
+    private int rateLimitCapacity = 1000;
 
     /**
      * Window duration in seconds for the rate limiter. Defaults to 60 seconds (1 minute).
@@ -48,15 +53,7 @@ public class RiskProperties {
     private CircuitBreakerProperties circuitBreaker = new CircuitBreakerProperties();
 
     public static class CircuitBreakerProperties {
-        /**
-         * Whether the automatic circuit breaker trip on consecutive rejections is enabled.
-         * Disabled by default for prototype flexibility.
-         */
         private boolean autoTripEnabled = false;
-
-        /**
-         * Threshold of consecutive risk rejections required to trigger an automatic trading halt.
-         */
         private int consecutiveRejectionThreshold = 50;
 
         public boolean isAutoTripEnabled() {
@@ -90,6 +87,14 @@ public class RiskProperties {
 
     public void setMaxAbsolutePosition(BigDecimal maxAbsolutePosition) {
         this.maxAbsolutePosition = maxAbsolutePosition;
+    }
+
+    public BigDecimal getMaxPriceBandPercent() {
+        return maxPriceBandPercent;
+    }
+
+    public void setMaxPriceBandPercent(BigDecimal maxPriceBandPercent) {
+        this.maxPriceBandPercent = maxPriceBandPercent;
     }
 
     public int getRateLimitCapacity() {

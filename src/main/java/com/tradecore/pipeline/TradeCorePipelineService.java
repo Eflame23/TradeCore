@@ -1,11 +1,11 @@
 package com.tradecore.pipeline;
 
 import com.tradecore.ledger.service.LedgerService;
+import com.tradecore.order.service.OrderService;
+import com.tradecore.risk.model.Order;
 import com.tradecore.risk.model.RiskResult;
 import com.tradecore.risk.service.RiskService;
 import com.trading.engine.MatchingEngine;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -14,26 +14,27 @@ import java.util.List;
 /**
  * End-to-end integration pipeline coordinating Part D (Risk), Part A (Matching Engine),
  * Part B (Ledger & Settlement), and Part C (Notifications via Event Publisher).
- *
- * <p>Execution Flow:</p>
- * <pre>
- *   RiskService.validate(order)
- *       -> MatchingEngine.submit(engineOrder)
- *           -> LedgerService.settle(ledgerTrade)
- * </pre>
  */
 @Service
 public class TradeCorePipelineService {
 
-    private static final Logger log = LoggerFactory.getLogger(TradeCorePipelineService.class);
-
+    private final OrderService orderService;
     private final RiskService riskService;
     private final MatchingEngine matchingEngine;
     private final LedgerService ledgerService;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    public TradeCorePipelineService(OrderService orderService) {
+        this.orderService = orderService;
+        this.riskService = null;
+        this.matchingEngine = null;
+        this.ledgerService = null;
+    }
+
     public TradeCorePipelineService(RiskService riskService,
                                    MatchingEngine matchingEngine,
                                    LedgerService ledgerService) {
+        this.orderService = null;
         this.riskService = riskService;
         this.matchingEngine = matchingEngine;
         this.ledgerService = ledgerService;
@@ -45,22 +46,20 @@ public class TradeCorePipelineService {
      * @param order the risk domain order
      * @return PipelineResult summarizing risk decision and settled trades
      */
-    public PipelineResult processOrder(com.tradecore.risk.model.Order order) {
-        // Step 1: Pre-trade risk validation
+    public PipelineResult processOrder(Order order) {
+        if (orderService != null) {
+            return orderService.processOrder(order);
+        }
+
+        // Direct pipeline execution for unit testing / standalone pipeline calls
         RiskResult riskResult = riskService.validate(order);
         if (!riskResult.accepted()) {
-            log.warn("Order {} rejected by pre-trade risk. Reason: {}. Reason message: {}",
-                    order != null ? order.id() : "null", riskResult.rejectReason(), riskResult.message());
             return PipelineResult.rejected(riskResult);
         }
 
-        // Step 2: Convert risk order to engine order & submit to Matching Engine
         com.trading.common.Order engineOrder = toEngineOrder(order);
         List<com.trading.common.Trade> executedTrades = matchingEngine.submit(engineOrder);
 
-        log.info("Order {} matched into {} trade execution(s).", order.id(), executedTrades.size());
-
-        // Step 3: Settle each executed trade in the Ledger
         List<com.tradecore.ledger.model.Trade> settledTrades = new ArrayList<>();
         for (com.trading.common.Trade engineTrade : executedTrades) {
             com.tradecore.ledger.model.Trade ledgerTrade = toLedgerTrade(engineTrade);
@@ -73,7 +72,7 @@ public class TradeCorePipelineService {
         return PipelineResult.accepted(riskResult, executedTrades.size(), settledTrades);
     }
 
-    private com.trading.common.Order toEngineOrder(com.tradecore.risk.model.Order order) {
+    private com.trading.common.Order toEngineOrder(Order order) {
         com.trading.common.Side engineSide = order.side() == com.tradecore.risk.model.Side.BUY
                 ? com.trading.common.Side.BUY
                 : com.trading.common.Side.SELL;

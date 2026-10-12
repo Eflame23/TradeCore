@@ -27,7 +27,7 @@ import java.util.Map;
  * RiskService before submitting to the MatchingEngine.</p>
  */
 @RestController
-@RequestMapping("/api/orders")
+@RequestMapping("/api/risk-example/orders")
 public class RiskOrderSubmissionExampleController {
 
     private final RiskService riskService;
@@ -75,8 +75,8 @@ public class RiskOrderSubmissionExampleController {
         return switch (reason) {
             case TRADING_HALTED -> HttpStatus.SERVICE_UNAVAILABLE; // 503
             case RATE_LIMIT_EXCEEDED -> HttpStatus.TOO_MANY_REQUESTS; // 429
-            case MAX_QUANTITY_EXCEEDED, POSITION_LIMIT_EXCEEDED, POSITION_DATA_UNAVAILABLE -> HttpStatus.UNPROCESSABLE_ENTITY; // 422
-            case ORDER_NULL, ORDER_ID_INVALID, USER_ID_INVALID, SIDE_INVALID, INVALID_QUANTITY, INVALID_PRICE -> HttpStatus.BAD_REQUEST; // 400
+            case MAX_QUANTITY_EXCEEDED, POSITION_LIMIT_EXCEEDED, POSITION_DATA_UNAVAILABLE, INSUFFICIENT_FUNDS -> HttpStatus.UNPROCESSABLE_ENTITY; // 422
+            case ORDER_NULL, ORDER_ID_INVALID, USER_ID_INVALID, SIDE_INVALID, INVALID_QUANTITY, INVALID_PRICE, PRICE_OUT_OF_BAND -> HttpStatus.BAD_REQUEST; // 400
         };
     }
 }

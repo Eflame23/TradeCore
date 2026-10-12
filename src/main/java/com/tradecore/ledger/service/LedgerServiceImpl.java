@@ -89,19 +89,19 @@ public class LedgerServiceImpl implements LedgerService {
             );
         }
 
-        // 9 & 11. Update buyer: Debit USD, Credit BTC
+        // 9 & 11. Update buyer: Debit USD, Credit BTC, Unreserve Cash
         int buyerUpdated = jdbcTemplate.update(
-                "UPDATE accounts SET cash_balance = cash_balance - ?, asset_balance = asset_balance + ? WHERE user_id = ?",
-                totalUsdValue, tradeQty, trade.buyerId()
+                "UPDATE accounts SET cash_balance = cash_balance - ?, asset_balance = asset_balance + ?, reserved_cash = GREATEST(0.00, reserved_cash - ?) WHERE user_id = ?",
+                totalUsdValue, tradeQty, totalUsdValue, trade.buyerId()
         );
         if (buyerUpdated != 1) {
             throw new IllegalStateException("Failed to update balances for buyer: " + trade.buyerId());
         }
 
-        // 10 & 12. Update seller: Credit USD, Debit BTC
+        // 10 & 12. Update seller: Credit USD, Debit BTC, Unreserve Asset
         int sellerUpdated = jdbcTemplate.update(
-                "UPDATE accounts SET cash_balance = cash_balance + ?, asset_balance = asset_balance - ? WHERE user_id = ?",
-                totalUsdValue, tradeQty, trade.sellerId()
+                "UPDATE accounts SET cash_balance = cash_balance + ?, asset_balance = asset_balance - ?, reserved_asset = GREATEST(0.00000000, reserved_asset - ?) WHERE user_id = ?",
+                totalUsdValue, tradeQty, tradeQty, trade.sellerId()
         );
         if (sellerUpdated != 1) {
             throw new IllegalStateException("Failed to update balances for seller: " + trade.sellerId());

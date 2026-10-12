@@ -3,6 +3,7 @@ package com.tradecore.risk.service;
 import com.tradecore.risk.circuitbreaker.TradingCircuitBreaker;
 import com.tradecore.risk.config.RiskProperties;
 import com.tradecore.risk.model.Order;
+import com.tradecore.risk.model.OrderType;
 import com.tradecore.risk.model.RiskRejectReason;
 import com.tradecore.risk.model.RiskResult;
 import com.tradecore.risk.model.Side;
@@ -19,20 +20,6 @@ import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Implementation of RiskService providing comprehensive pre-trade validation.
- *
- * <p>Execution order follows strict pre-trade hygiene:</p>
- * <ol>
- *   <li><strong>Global Circuit Breaker:</strong> Reject if trading is halted globally.</li>
- *   <li><strong>Order Schema & Sanity:</strong> Reject null order, invalid IDs, missing side, non-positive price/qty, and non-finite numbers.</li>
- *   <li><strong>Rate Limiting:</strong> Enforce per-user token-bucket limits.</li>
- *   <li><strong>Max Order Size:</strong> Reject single orders exceeding configured maximum quantity.</li>
- *   <li><strong>Position Limit Enforcement:</strong> Query user position, simulate post-order net position, and reject if limits are exceeded.</li>
- * </ol>
- *
- * <p><strong>Concurrency & Position Oversubscription:</strong></p>
- * <p>To prevent two simultaneous orders from bypassing the user's position limit via race conditions,
- * an isolated lock per user is acquired during position validation. Furthermore, if reliable position
- * data is unavailable, the service fails safely by rejecting the order rather than allowing potential unbounded risk exposure.</p>
  */
 @Service
 public class RiskServiceImpl implements RiskService {
@@ -44,7 +31,6 @@ public class RiskServiceImpl implements RiskService {
     private final TradingCircuitBreaker circuitBreaker;
     private final PositionProvider positionProvider;
 
-    // Per-user locks to prevent race conditions during position calculations
     private final ConcurrentHashMap<String, ReentrantLock> userLocks = new ConcurrentHashMap<>();
 
     public RiskServiceImpl(RiskProperties properties,
@@ -85,8 +71,12 @@ public class RiskServiceImpl implements RiskService {
             return reject(RiskRejectReason.INVALID_QUANTITY, "Order quantity must be strictly positive. Provided: " + order.qty());
         }
 
-        if (order.price() == null || order.price().compareTo(BigDecimal.ZERO) <= 0) {
-            return reject(RiskRejectReason.INVALID_PRICE, "Order price must be strictly positive. Provided: " + order.price());
+        OrderType orderType = order.orderType() != null ? order.orderType() : OrderType.LIMIT;
+
+        if (orderType == OrderType.LIMIT) {
+            if (order.price() == null || order.price().compareTo(BigDecimal.ZERO) <= 0) {
+                return reject(RiskRejectReason.INVALID_PRICE, "LIMIT order price must be strictly positive. Provided: " + order.price());
+            }
         }
 
         // 3. Per-user Rate limiting
@@ -120,8 +110,6 @@ public class RiskServiceImpl implements RiskService {
         try {
             Optional<BigDecimal> positionOpt = positionProvider.getPosition(order.userId());
             if (positionOpt.isEmpty()) {
-                // Fail-safe approach: If user position data is unavailable or cannot be determined reliably,
-                // fail safely rather than silently allowing unconstrained exposure.
                 log.warn("Position data unavailable for user '{}'. Rejecting order to ensure safety.", order.userId());
                 return reject(RiskRejectReason.POSITION_DATA_UNAVAILABLE,
                         String.format("Position data for user '%s' is unavailable. Order rejected for safety.", order.userId()));

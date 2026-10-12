@@ -1,242 +1,151 @@
-# TradeCore — High-Performance Trading Exchange Prototype
+# TradeCore — High-Performance Trading Exchange Platform
 
-TradeCore is a high-performance prototype trading exchange backend built with Java 17+, Spring Boot 3, and PostgreSQL.
-
----
-
-## Architecture Overview & Module Responsibilities
-
-TradeCore is partitioned into five specialized modules:
-
-1. **Part A — Matching Engine (`com.trading.engine`)**: In-memory price-time priority matching engine.
-2. **Part B — Ledger & Settlement (`com.tradecore.ledger`)**: Atomic, idempotent, double-entry settlement and audit log.
-3. **Part C — Event Streaming & Notifications (`com.tradecore.notification`)**: Event listening and trade settlement alerts.
-4. **Part D — Risk Management & Rate Limiting (`com.tradecore.risk`)**: Pre-trade validation, per-user rate limiting, position checks, and trading circuit breaker.
-5. **Part E — Integration & Infrastructure**: Unified build, Docker compose, and demo pipelines.
+TradeCore is a high-performance prototype trading exchange built with Java 17+, Spring Boot 3, and PostgreSQL, featuring a Zerodha Kite-inspired professional web trading interface.
 
 ---
 
-# Part D: Risk Management & Rate Limiting Module
+## 🚀 Key Features & Capability Matrix
 
-The **`com.tradecore.risk`** module enforces strict pre-trade hygiene before any limit order reaches the Matching Engine.
+| Area | Feature | Priority | Implementation Status |
+|---|---|---|---|
+| **Trading Core** | Limit orders (buy/sell at limit price) | P1 | ✅ Active in `OrderBook` & `MatchingEngine` |
+| | Price-time priority matching | P1 | ✅ FIFO TreeMap + Deque ($O(\log P)$) |
+| | Partial fills & order cancellation | P1 | ✅ REST API & engine level cancellation |
+| | Market orders (buy/sell at best available price) | P2 | ✅ Supported in `OrderBook` & `OrderService` |
+| | Self-trade prevention (STP) | P2 | ✅ Automatic cancel-maker on self-match |
+| | Multi-asset instruments (Crypto, Stocks, Commodities) | P3 | ✅ `InstrumentMatchingEngineManager` |
+| **Money & Safety** | Wallet with cash & asset balances | P1 | ✅ `WalletService` & `/api/wallet` |
+| | Atomic settlement & idempotency | P1 | ✅ `@Transactional` & `settlements` table |
+| | Double-entry ledger zero-sum invariant check | P1 | ✅ `/api/admin/system/ledger/invariants` |
+| | Crash-test / recovery proof | P1 | ✅ `/api/admin/system/crash-test` |
+| | Funds reserved when order is placed | P2 | ✅ `reserved_cash` & `reserved_asset` bounds |
+| **Risk & Protection** | Input validation (qty > 0, price > 0) | P1 | ✅ `RiskServiceImpl` pre-trade hygiene |
+| | Max order size & position limits | P1 | ✅ Per-user thread-safe position locks |
+| | Per-user token-bucket rate limiting | P1 | ✅ `TokenBucketRateLimiter` |
+| | Circuit breaker / global trading halt | P2 | ✅ `TradingCircuitBreaker` & UI alert |
+| | Price-band checks (reject absurd prices) | P2 | ✅ Price band validation in `RiskServiceImpl` |
+| **Real-time Experience** | Live Level-2 order book & depth bars | P1 | ✅ `/api/orderbook` & `/api/stream/orderbook` |
+| | Live trade feed (SSE / WebSockets) | P1 | ✅ `/api/stream/trades` SSE feed |
+| | Candlestick Chart (1m, 5m, 15m + EMA20 & SMA50) | P2 | ✅ HTML5 Canvas charting engine |
+| | Market News & AI Sentiment Feed | P2 | ✅ `/api/news` (Bullish / Bearish / Neutral) |
+| **Users & Security** | Login / Registration | P2 | ✅ BCrypt password hashing & `/api/auth` |
+| | JWT Authentication & Spring Security | P2 | ✅ Stateless JWT Filter & Security Config |
+| | Role-based access (User vs Admin) | P2 | ✅ `USER` & `ADMIN` role support |
+| **Simulation & Bots** | Market-Maker, Trend & Noise Bots | P1 | ✅ `BotMarketSimulationService` |
+| | Start/Stop controls & speed configuration | P1 | ✅ `/api/admin/system/bots/*` |
+| | Profit & Loss Leaderboard | P2 | ✅ `/api/leaderboard` ranking users & bots |
+| **Transparency & History** | Trade history per user | P1 | ✅ `/api/orders/user/{userId}` |
+| | Audit trail with "why this matched" reason | P1 | ✅ `/api/audit/trades` execution proofs |
+| | Order history with statuses | P2 | ✅ Persistent `orders` table (OPEN, FILLED, CANCELLED) |
+| | Portfolio view with profit/loss | P2 | ✅ Realized/Unrealized P&L & equity calculation |
+| **UI/UX** | Zerodha Kite inspired professional dashboard | P1/P2 | ✅ Light & Dark theme toggle, Universal Search |
+
+---
+
+## 🏛️ Architecture & Execution Pipeline
 
 ```
-Incoming Request
+Incoming Order Request
        │
        ▼
-┌──────────────┐
-│  RiskService │ ── (Rejected: 400, 429, 422, 503) ──> Client Rejection
-└──────┬───────┘
+┌──────────────────┐
+│  Security / JWT  │
+└──────┬───────────┘
+       │
+       ▼
+┌──────────────────┐
+│   RiskService    │ ── (Rejected: 400, 429, 422, 503) ──> Client Rejection
+└──────┬───────────┘
        │ (Accepted)
        ▼
 ┌──────────────────┐
-│  MatchingEngine  │
+│  WalletService   │ ── (Reserves Funds: Cash / Asset)
 └──────┬───────────┘
-       │ (Executed Trade)
+       │
        ▼
 ┌──────────────────┐
-│  LedgerService   │ ── (Double-Entry Settlement)
+│  MatchingEngine  │ ── (Price-Time Priority & Self-Trade Prevention)
 └──────┬───────────┘
-       │ (TradeSettledEvent)
+       │ (Executed Trades)
        ▼
 ┌──────────────────┐
-│ EventPublisher   │
+│  LedgerService   │ ── (Double-Entry Settlement & Unreserve)
+└──────┬───────────┘
+       │
+       ▼
+┌──────────────────┐
+│   AuditService   │ ── (Records "Why Matched" Proof in trade_audits)
 └──────────────────┘
 ```
 
 ---
 
-## 1. Risk Controls & Rules
+## 🖥️ Zerodha Kite User Interface (Static Web App)
 
-### Order Validation Rules
-- **Null Guards:** Rejects null order objects.
-- **ID Validation:** Rejects missing, blank, or malformed Order IDs and User IDs.
-- **Side Guard:** Requires an explicit `BUY` or `SELL` side.
-- **Quantity Bounds:** Requires quantity strictly $> 0$ and $\le$ `tradecore.risk.max-order-quantity`.
-- **Price Bounds:** Requires limit price strictly $> 0$ (represented using `BigDecimal`).
-- **Finite Numbers:** Rejects NaN or infinite numerical inputs.
-
-### Position Limits
-- Enforces a maximum absolute position per user (`tradecore.risk.max-absolute-position`, e.g., 100 BTC).
-- **BUY Order:** Projected net position = $\text{Current Position} + \text{Order Quantity}$.
-- **SELL Order:** Projected net position = $\text{Current Position} - \text{Order Quantity}$.
-- Rejects orders if $|\text{Projected Position}| > \text{Max Absolute Position}$.
-- **Position Source:** Position data is queried from the `accounts` database table via `DatabasePositionProvider`.
-- **Concurrency Guard:** Isolated per-user locks (`ConcurrentHashMap` of `ReentrantLock`) prevent two concurrent orders from bypassing the user's position limit simultaneously.
-- **Fail-Safe Behavior:** If database position data is unavailable, the order is rejected safely (`POSITION_DATA_UNAVAILABLE`).
-
-### Per-User Rate Limiting
-- Implemented as an in-memory **Token Bucket Rate Limiter** (`TokenBucketRateLimiter`).
-- Each user maintains an independent token bucket mapped via `ConcurrentHashMap`.
-- Per-bucket thread safety is guaranteed by isolated `ReentrantLock` instances, avoiding global lock contention.
-- Smooth token replenishment over the configured window duration (`tradecore.risk.rate-limit-window-seconds`).
-- Memory growth is bounded by automated eviction (`evictInactiveEntries()`) of inactive buckets past the configured threshold (`tradecore.risk.rate-limiter-inactivity-minutes`).
-- Uses an injectable `Clock` abstraction for deterministic test verification.
-
-### Circuit Breaker & Global Trading Halt
-- Managed thread-safely via `TradingCircuitBreaker` using an `AtomicBoolean`.
-- **Manual Halt / Resume:** Admin endpoints permit instant halting and manual resumption of trading.
-- **Automatic Tripping:** When enabled (`tradecore.risk.circuit-breaker.auto-trip-enabled=true`), exceeding a configured threshold of consecutive risk rejections automatically trips the breaker into a halted state.
-- **Safety Guarantee:** Trading **NEVER** automatically resumes after a halt; an explicit administrative call (`/api/admin/risk/resume`) is strictly required.
+Located at `http://localhost:8080/` once started:
+- **Universal Stock / Crypto / Commodity Search Bar**: Instant search across 15+ assets (`BTC-USD`, `ETH-USD`, `SOL-USD`, `AAPL`, `TSLA`, `NVDA`, `GOLD`, `CRUDEOIL`).
+- **Interactive Candlestick Charting**: Custom HTML5 Canvas renderer with Green/Red candles, High/Low wicks, Volume histogram, and **EMA 20 & SMA 50 technical indicator overlays**.
+- **Level-2 Market Depth & Order Book**: Top 5/10 Bids and Asks with visual depth bar percentage overlays.
+- **Zerodha Order Ticket**: Tabbed Buy/Sell modal supporting LIMIT, MARKET, and STOP-LOSS order types with quick % balance buttons (25%, 50%, 75%, 100%).
+- **Multi-Tab Panel**:
+  1. *Orders & Positions*: Active/historical orders with status tags and cancel button.
+  2. *Portfolio & Allocation*: Real-time Cash, Equity, and P&L (amount & %).
+  3. *Match Audit Log*: Detailed execution proofs showing why each order matched.
+  4. *Market News*: Live market headlines with AI sentiment indicators.
+  5. *Leaderboard*: Trader & Bot net worth rankings.
+  6. *Admin Controls*: Global Circuit Breaker halt/resume, Bot simulation, and Crash-Test proof.
 
 ---
 
-## 2. Configuration Properties
+## ⚡ REST API Endpoints
 
-Centralized in `application.yml` / `application.properties` under `tradecore.risk`:
+### Authentication
+- `POST /api/auth/register` — Register a new account (`username`, `password`)
+- `POST /api/auth/login` — Login and receive JWT access token
 
-| Property | Default Value | Description |
-|---|---|---|
-| `tradecore.risk.max-order-quantity` | `10` | Maximum single order quantity (e.g., 10 BTC) |
-| `tradecore.risk.max-absolute-position` | `100` | Maximum absolute position per user (e.g., 100 BTC) |
-| `tradecore.risk.rate-limit-capacity` | `20` | Max request tokens per rate-limit window |
-| `tradecore.risk.rate-limit-window-seconds` | `60` | Duration of rate-limit window in seconds |
-| `tradecore.risk.rate-limiter-max-entries` | `10000` | Max tracked buckets before proactive cleanup |
-| `tradecore.risk.rate-limiter-inactivity-minutes` | `30` | Minutes of inactivity before eviction |
-| `tradecore.risk.circuit-breaker.auto-trip-enabled` | `false` | Enable automatic circuit breaker trip on rejections |
-| `tradecore.risk.circuit-breaker.consecutive-rejection-threshold` | `50` | Rejections required to trigger auto-halt |
+### Orders & Matching
+- `POST /api/orders` — Submit limit, market, or stop-loss order
+- `DELETE /api/orders/{orderId}?userId=alice` — Cancel resting order and release reserved funds
+- `GET /api/orders/user/{userId}` — Get order history with status
+- `GET /api/orderbook?symbol=BTC-USD` — Get Level-2 order book snapshot
 
----
+### Markets & Instruments
+- `GET /api/instruments` — Get catalog of stocks, crypto, and commodities
+- `GET /api/instruments/search?query=AAPL` — Search instruments
+- `GET /api/chart/candles?intervalMinutes=1` — Get OHLCV candlestick data
+- `GET /api/news` — Get market news & AI sentiment feed
 
-## 3. HTTP Rejection Mapping
+### Wallet, Portfolio & Audit
+- `GET /api/wallet/{userId}` — View cash, asset, available, and reserved balances
+- `GET /api/portfolio/{userId}` — View total equity, holdings, and P&L
+- `GET /api/leaderboard` — View trader profit leaderboard
+- `GET /api/audit/trades` — View "why matched" match audit log
 
-When orders are submitted via REST, risk rejections map directly to standardized HTTP status codes:
-
-| Rejection Reason | HTTP Status Code | Description |
-|---|---|---|
-| `ORDER_NULL`, `ORDER_ID_INVALID`, `USER_ID_INVALID`, `SIDE_INVALID`, `INVALID_QUANTITY`, `INVALID_PRICE` | `400 Bad Request` | Invalid payload or non-positive numerical fields |
-| `RATE_LIMIT_EXCEEDED` | `429 Too Many Requests` | Per-user rate limit capacity exceeded |
-| `TRADING_HALTED` | `503 Service Unavailable` | Global trading is halted by circuit breaker |
-| `MAX_QUANTITY_EXCEEDED`, `POSITION_LIMIT_EXCEEDED`, `POSITION_DATA_UNAVAILABLE` | `422 Unprocessable Entity` | Order size or position bounds exceeded, or position unavailable |
-
----
-
-## 4. REST APIs
-
-### Order Submission Endpoint
-- `POST /api/orders`
-  - Body: `{"id": "ord-1", "userId": "alice", "side": "BUY", "price": 50000.00, "qty": 2}`
-  - Evaluates `RiskService.validate(order)` prior to matching engine dispatch.
-
-### Administrative Risk Endpoints
-- `GET /api/admin/risk/status` — Returns circuit breaker halt status and tracked rate limiter key counts.
-- `POST /api/admin/risk/halt?reason=Volatility` — Halts global trading immediately.
-- `POST /api/admin/risk/resume` — Resumes global trading.
-- `POST /api/admin/risk/ratelimit/reset?userId=alice` — Resets rate limit buckets for a specified user.
-
-> [!IMPORTANT]
-> Admin endpoints are unauthenticated in this prototype for ease of local evaluation. Production deployments must enforce OAuth2/RBAC and mutual TLS.
+### System Administration & Simulation
+- `POST /api/admin/risk/halt` — Emergency halt global trading
+- `POST /api/admin/risk/resume` — Resume global trading
+- `POST /api/admin/system/bots/start` — Start market maker, trend & noise simulation bots
+- `POST /api/admin/system/bots/stop` — Stop simulation bots
+- `GET /api/admin/system/ledger/invariants` — Execute double-entry zero-sum invariant check
+- `POST /api/admin/system/crash-test` — Execute automated crash-test consistency proof
 
 ---
 
-## 5. Automated Tests & Verification
+## 🛠️ Building & Running
 
-### Executing Tests
-To run all 46 unit and integration tests across Ledger and Risk modules:
+### Prerequisites
+- JDK 17 or higher
+- Maven (`./mvnw` included)
+- PostgreSQL (or in-memory H2 fallback)
 
+### Compile & Run Tests
 ```bash
-mvn test
+./mvnw test
 ```
 
-### Coverage Summary (36 Risk Tests)
-1. `shouldAcceptValidOrder`: Valid order is accepted.
-2. `shouldRejectNullOrMalformedOrder`: Null/blank order parameters rejected.
-3. `shouldRejectNonPositivePrice`: Price $\le 0$ rejected.
-4. `shouldRejectNonPositiveQuantity`: Quantity $\le 0$ rejected.
-5. `shouldRejectQuantityExceedingMax`: Order quantity exceeding 10 BTC rejected.
-6. `shouldRejectBuyExceedingPositionLimit`: Projected BUY position $> 100$ BTC rejected.
-7. `shouldRejectSellExceedingNegativePositionLimit`: Projected SELL position $< -100$ BTC rejected.
-8. `shouldMaintainIndependentLimitsPerUser`: Rate limits isolated per user.
-9. `shouldAcceptRequestsWithinLimit`: Submissions within rate capacity accepted.
-10. `shouldRejectRequestsBeyondLimit`: Excess requests rejected.
-11. `shouldHandleConcurrentRequestsThreadSafely`: Thread safety under concurrent load verified.
-12. `shouldRefillDeterministicallyOverTime`: Injectable test clock verifies deterministic token replenishment.
-13. `shouldHaltManually`: Global trading halt blocks order processing.
-14. `shouldResumeTrading`: Resuming trading restores order processing.
-15. `shouldBeThreadSafeUnderConcurrentAccess`: Circuit breaker thread-safe under multithreaded toggles.
-16. `rejectedOrdersNeverReachMatchingEngine`: Pipeline demo verifies risk rejections short-circuit before engine invocation.
-17. `shouldFailSafelyWhenPositionDataUnavailable`: Missing position data triggers safe rejection.
-
----
-
-## 6. Prototype vs. Production Comparison
-
-| Feature | Prototype Implementation | Production Requirement |
-|---|---|---|
-| **Rate Limiter Storage** | In-memory `ConcurrentHashMap` Token Bucket | Distributed Redis cluster with Lua scripts or Redisson |
-| **Position Data Source** | Synchronous database lookup against `accounts` | Low-latency in-memory cache synchronized with order book state |
-| **Admin Endpoint Security** | Development-only unauthenticated REST endpoints | OAuth2 / OIDC authentication with RBAC and mTLS |
-| **Circuit Breaker Persistence** | In-memory `AtomicBoolean` state | Distributed consensus (e.g., ZooKeeper / Etcd) across all engine nodes |
-| **Order Pipeline** | Synchronous service calls | High-throughput Disruptor / RingBuffer with async event streaming |
-
----
-
-# Part B: Ledger & Settlement Module
-
-## Database Schema
-
-Managed tables in PostgreSQL:
-
-1. **`accounts`**: User USD and BTC balances. Database constraints strictly prohibit negative balances.
-2. **`settlements`**: Unique `trade_id` primary key for idempotent settlement.
-3. **`ledger_entries`**: Append-only double-entry audit log ensuring zero-sum financial movements.
-
-```mermaid
-erDiagram
-    settlements ||--|{ ledger_entries : "trade_id"
-    accounts ||--|{ ledger_entries : "user_id"
-    accounts {
-        varchar user_id PK
-        numeric cash_balance
-        numeric asset_balance
-    }
-    settlements {
-        varchar trade_id PK
-        timestamp settled_at
-    }
-    ledger_entries {
-        bigserial id PK
-        varchar trade_id FK
-        varchar user_id FK
-        varchar currency
-        numeric amount
-        timestamp created_at
-    }
+### Launch Application
+```bash
+./mvnw spring-boot:run
 ```
 
----
-
-## Double-Entry Invariants
-
-For every executed trade:
-1. Buyer USD Debit: `- (price * qty)`
-2. Seller USD Credit: `+ (price * qty)`
-3. Seller BTC Debit: `- qty`
-4. Buyer BTC Credit: `+ qty`
-
-$$\sum \text{amount}_{\text{USD}} = 0, \quad \sum \text{amount}_{\text{BTC}} = 0$$
-
----
-
-## Inspection SQL Queries
-
-### Check Current Balances
-```sql
-SELECT user_id, cash_balance, asset_balance FROM accounts ORDER BY user_id;
-```
-
-### Check Double-Entry Audit Trail
-```sql
-SELECT id, trade_id, user_id, currency, amount, created_at
-FROM ledger_entries
-WHERE trade_id = 'T-100'
-ORDER BY id ASC;
-```
-
-### Verify Zero-Sum Invariant
-```sql
-SELECT trade_id, currency, SUM(amount) AS net_sum
-FROM ledger_entries
-GROUP BY trade_id, currency
-HAVING SUM(amount) <> 0;
-```
+Open browser at `http://localhost:8080/` to launch the Zerodha Kite Trading Dashboard!
