@@ -5,6 +5,8 @@ import com.tradecore.ledger.exception.InsufficientBalanceException;
 import com.tradecore.ledger.exception.TradeValidationException;
 import com.tradecore.ledger.model.Account;
 import com.tradecore.ledger.model.Trade;
+import com.tradecore.notification.event.TradeSettledEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -25,9 +27,11 @@ public class LedgerServiceImpl implements LedgerService {
     private static final Logger log = LoggerFactory.getLogger(LedgerServiceImpl.class);
 
     private final JdbcTemplate jdbcTemplate;
+    private final ApplicationEventPublisher eventPublisher;
 
-    public LedgerServiceImpl(JdbcTemplate jdbcTemplate) {
+    public LedgerServiceImpl(JdbcTemplate jdbcTemplate, ApplicationEventPublisher eventPublisher) {
         this.jdbcTemplate = jdbcTemplate;
+        this.eventPublisher = eventPublisher;
     }
 
     @Override
@@ -120,6 +124,11 @@ public class LedgerServiceImpl implements LedgerService {
 
         log.info("Successfully settled trade {} between buyer {} and seller {} for {} BTC at ${}",
                 trade.tradeId(), trade.buyerId(), trade.sellerId(), tradeQty, trade.price());
+
+        // The listener persists notifications only AFTER this transaction commits.
+        // If settlement rolls back, no trade-settled notification is created.
+        eventPublisher.publishEvent(new TradeSettledEvent(
+                trade.tradeId(), trade.buyerId(), trade.sellerId(), trade.price(), trade.qty(), java.time.Instant.now()));
         return true;
     }
 
