@@ -15,34 +15,33 @@
     <artifactId>tradecore</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <name>tradecore</name>
-    <description>TradeCore Trading Exchange Prototype - Ledger and Settlement</description>
+    <description>TradeCore Trading Exchange Prototype</description>
 
     <properties>
         <java.version>17</java.version>
     </properties>
 
-
     <dependencies>
-    <!-- Spring Boot Starter JDBC -->
+        <!-- Spring Boot Starter JDBC -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-jdbc</artifactId>
         </dependency>
 
-    <!-- Spring Web for Notification REST API -->
+        <!-- Spring Web for REST API -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
 
-    <!-- PostgreSQL Driver -->
+        <!-- PostgreSQL Driver -->
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
             <scope>runtime</scope>
         </dependency>
 
-    <!-- Flyway Migration -->
+        <!-- Flyway Migration -->
         <dependency>
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-core</artifactId>
@@ -52,14 +51,14 @@
             <artifactId>flyway-database-postgresql</artifactId>
         </dependency>
 
-    <!-- Testing Dependencies -->
+        <!-- Testing Dependencies -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
 
-    <!-- Embedded PostgreSQL for integration tests -->
+        <!-- Embedded PostgreSQL for integration tests -->
         <dependency>
             <groupId>io.zonky.test</groupId>
             <artifactId>embedded-database-spring-test</artifactId>
@@ -73,7 +72,7 @@
             <scope>test</scope>
         </dependency>
 
-    <!-- Testcontainers PostgreSQL support -->
+        <!-- Testcontainers PostgreSQL support -->
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>postgresql</artifactId>
@@ -87,7 +86,6 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
-
 
     <build>
         <plugins>
