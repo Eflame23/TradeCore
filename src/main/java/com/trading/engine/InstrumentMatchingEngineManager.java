@@ -1,9 +1,12 @@
 package com.trading.engine;
 
+import com.tradecore.instrument.Instrument;
+import com.tradecore.instrument.InstrumentService;
 import com.trading.common.Order;
 import com.trading.common.OrderType;
 import com.trading.common.Side;
 import com.trading.common.Trade;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 
@@ -19,6 +22,11 @@ import java.util.concurrent.ConcurrentHashMap;
 public class InstrumentMatchingEngineManager implements MatchingEngine {
 
     private final ConcurrentHashMap<String, OrderBookMatchingEngine> engines = new ConcurrentHashMap<>();
+    private final InstrumentService instrumentService;
+
+    public InstrumentMatchingEngineManager(@Lazy InstrumentService instrumentService) {
+        this.instrumentService = instrumentService;
+    }
 
     public OrderBookMatchingEngine getEngine(String symbol) {
         String key = (symbol == null || symbol.isBlank()) ? "BTC-USD" : symbol.trim().toUpperCase();
@@ -29,39 +37,52 @@ public class InstrumentMatchingEngineManager implements MatchingEngine {
         });
     }
 
-    private void seedLiquidity(OrderBookMatchingEngine engine, String symbol) {
+    public void seedLiquidity(OrderBookMatchingEngine engine, String symbol) {
         BigDecimal base = getReferencePrice(symbol);
+        BigDecimal step = getTickStep(base);
 
-        // Seed 3 resting Bids below base price
-        for (int i = 1; i <= 3; i++) {
-            BigDecimal price = base.subtract(BigDecimal.valueOf(i * 10.0)).setScale(2, RoundingMode.HALF_UP);
-            engine.submit(new Order(
-                    "seed-bid-" + symbol + "-" + i + "-" + UUID.randomUUID().toString().substring(0, 4),
-                    symbol, "bot_mm", Side.BUY, OrderType.LIMIT, price, 2L, Instant.now()
-            ));
+        // Seed 5 resting Bids below live base price
+        for (int i = 1; i <= 5; i++) {
+            BigDecimal price = base.subtract(step.multiply(BigDecimal.valueOf(i))).setScale(2, RoundingMode.HALF_UP);
+            if (price.signum() > 0) {
+                long qty = (i * 2L) + 1;
+                engine.submit(new Order(
+                        "seed-bid-" + symbol + "-" + i + "-" + UUID.randomUUID().toString().substring(0, 4),
+                        symbol, "bot_mm", Side.BUY, OrderType.LIMIT, price, qty, Instant.now()
+                ));
+            }
         }
 
-        // Seed 3 resting Asks above base price
-        for (int i = 1; i <= 3; i++) {
-            BigDecimal price = base.add(BigDecimal.valueOf(i * 10.0)).setScale(2, RoundingMode.HALF_UP);
+        // Seed 5 resting Asks above live base price
+        for (int i = 1; i <= 5; i++) {
+            BigDecimal price = base.add(step.multiply(BigDecimal.valueOf(i))).setScale(2, RoundingMode.HALF_UP);
+            long qty = (i * 2L) + 1;
             engine.submit(new Order(
                     "seed-ask-" + symbol + "-" + i + "-" + UUID.randomUUID().toString().substring(0, 4),
-                    symbol, "bot_mm", Side.SELL, OrderType.LIMIT, price, 2L, Instant.now()
+                    symbol, "bot_mm", Side.SELL, OrderType.LIMIT, price, qty, Instant.now()
             ));
         }
     }
 
+    private BigDecimal getTickStep(BigDecimal price) {
+        if (price.compareTo(new BigDecimal("10000.00")) >= 0) return new BigDecimal("10.00");
+        if (price.compareTo(new BigDecimal("1000.00")) >= 0) return new BigDecimal("1.00");
+        if (price.compareTo(new BigDecimal("100.00")) >= 0) return new BigDecimal("0.50");
+        if (price.compareTo(new BigDecimal("10.00")) >= 0) return new BigDecimal("0.10");
+        return new BigDecimal("0.01");
+    }
+
     private BigDecimal getReferencePrice(String symbol) {
+        if (instrumentService != null) {
+            Instrument inst = instrumentService.getInstrument(symbol);
+            if (inst != null && inst.price() != null && inst.price().signum() > 0) {
+                return inst.price();
+            }
+        }
         if ("AAPL".equalsIgnoreCase(symbol)) return new BigDecimal("185.50");
         if ("TSLA".equalsIgnoreCase(symbol)) return new BigDecimal("240.20");
         if ("NVDA".equalsIgnoreCase(symbol)) return new BigDecimal("125.40");
-        if ("MSFT".equalsIgnoreCase(symbol)) return new BigDecimal("420.10");
-        if ("GOOGL".equalsIgnoreCase(symbol)) return new BigDecimal("175.30");
         if ("GOLD".equalsIgnoreCase(symbol)) return new BigDecimal("2380.00");
-        if ("SILVER".equalsIgnoreCase(symbol)) return new BigDecimal("30.50");
-        if ("CRUDEOIL".equalsIgnoreCase(symbol)) return new BigDecimal("78.40");
-        if ("ETH-USD".equalsIgnoreCase(symbol)) return new BigDecimal("3480.00");
-        if ("SOL-USD".equalsIgnoreCase(symbol)) return new BigDecimal("152.00");
         return new BigDecimal("50250.00");
     }
 
@@ -89,8 +110,8 @@ public class InstrumentMatchingEngineManager implements MatchingEngine {
         OrderBookMatchingEngine engine = getEngine(symbol);
         OrderBook.Snapshot snap = engine.snapshot();
 
-        // If snapshot is empty, re-seed liquidity
-        if (snap.bids().isEmpty() && snap.asks().isEmpty()) {
+        // Dynamically maintain 5 Bids and 5 Asks around live price
+        if (snap.bids().isEmpty() || snap.asks().isEmpty()) {
             seedLiquidity(engine, symbol);
             return engine.snapshot();
         }

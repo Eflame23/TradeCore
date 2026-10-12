@@ -859,14 +859,24 @@
             asksBody.innerHTML = '';
             bidsBody.innerHTML = '';
 
+            let maxVol = 1;
             let bestAsk = null;
             let bestBid = null;
 
+            if (data.asks) data.asks.forEach(a => maxVol = Math.max(maxVol, a.qty));
+            if (data.bids) data.bids.forEach(b => maxVol = Math.max(maxVol, b.qty));
+
             if (data.asks && data.asks.length > 0) {
-                bestAsk = data.asks[0].price;
-                data.asks.slice().reverse().forEach(lvl => {
+                bestAsk = parseFloat(data.asks[0].price);
+                data.asks.slice(0, 5).reverse().forEach(lvl => {
+                    const price = parseFloat(lvl.price);
+                    const qty = parseInt(lvl.qty);
+                    const total = price * qty;
+                    const pct = Math.min(100, Math.max(10, (qty / maxVol) * 100));
+
                     const tr = document.createElement('tr');
-                    tr.innerHTML = `<td style="color:var(--sell-red); font-weight:700;">$${parseFloat(lvl.price).toFixed(2)}</td><td>${lvl.qty}</td><td>$${(lvl.price * lvl.qty).toFixed(2)}</td>`;
+                    tr.style.background = `linear-gradient(270deg, rgba(246, 70, 93, 0.15) ${pct}%, transparent ${pct}%)`;
+                    tr.innerHTML = `<td style="color:var(--sell-red); font-weight:700;">$${price.toFixed(2)}</td><td>${qty}</td><td>$${total.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</td>`;
                     asksBody.appendChild(tr);
                 });
             } else {
@@ -874,10 +884,16 @@
             }
 
             if (data.bids && data.bids.length > 0) {
-                bestBid = data.bids[0].price;
-                data.bids.forEach(lvl => {
+                bestBid = parseFloat(data.bids[0].price);
+                data.bids.slice(0, 5).forEach(lvl => {
+                    const price = parseFloat(lvl.price);
+                    const qty = parseInt(lvl.qty);
+                    const total = price * qty;
+                    const pct = Math.min(100, Math.max(10, (qty / maxVol) * 100));
+
                     const tr = document.createElement('tr');
-                    tr.innerHTML = `<td style="color:var(--buy-green); font-weight:700;">$${parseFloat(lvl.price).toFixed(2)}</td><td>${lvl.qty}</td><td>$${(lvl.price * lvl.qty).toFixed(2)}</td>`;
+                    tr.style.background = `linear-gradient(270deg, rgba(14, 203, 129, 0.15) ${pct}%, transparent ${pct}%)`;
+                    tr.innerHTML = `<td style="color:var(--buy-green); font-weight:700;">$${price.toFixed(2)}</td><td>${qty}</td><td>$${total.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</td>`;
                     bidsBody.appendChild(tr);
                 });
             } else {
@@ -886,8 +902,9 @@
 
             if (bestAsk && bestBid) {
                 const spread = bestAsk - bestBid;
+                const spreadPct = (spread / bestAsk) * 100;
                 referencePrice = (bestAsk + bestBid) / 2;
-                document.getElementById('spreadBar').innerText = `SPREAD: $${spread.toFixed(2)}`;
+                document.getElementById('spreadBar').innerText = `SPREAD: $${spread.toFixed(2)} (${spreadPct.toFixed(2)}%)`;
             } else if (bestBid) {
                 referencePrice = bestBid;
             } else if (bestAsk) {
