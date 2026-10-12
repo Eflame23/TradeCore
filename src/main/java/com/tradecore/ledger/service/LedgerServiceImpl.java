@@ -6,9 +6,10 @@ import com.tradecore.ledger.exception.TradeValidationException;
 import com.tradecore.ledger.model.Account;
 import com.tradecore.ledger.model.Trade;
 import com.tradecore.notification.event.TradeSettledEvent;
-import org.springframework.context.ApplicationEventPublisher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
@@ -44,12 +45,20 @@ public class LedgerServiceImpl implements LedgerService {
         BigDecimal tradeQty = BigDecimal.valueOf(trade.qty());
         BigDecimal totalUsdValue = trade.price().multiply(tradeQty);
 
-        // 4 & 5. Claim the trade ID atomically using PostgreSQL ON CONFLICT DO NOTHING
-        // Return false if trade has already been settled (idempotency check)
-        int inserted = jdbcTemplate.update(
-                "INSERT INTO settlements (trade_id, settled_at) VALUES (?, CURRENT_TIMESTAMP) ON CONFLICT (trade_id) DO NOTHING",
-                trade.tradeId()
-        );
+        // 4 & 5. Claim trade ID atomically (Idempotency check)
+        int inserted = 0;
+        try {
+            inserted = jdbcTemplate.update(
+                    "INSERT INTO settlements (trade_id, settled_at) VALUES (?, CURRENT_TIMESTAMP)",
+                    trade.tradeId()
+            );
+        } catch (DuplicateKeyException e) {
+            log.info("Trade {} has already been settled. Skipping settlement (idempotent no-op).", trade.tradeId());
+            return false;
+        } catch (Exception e) {
+            log.info("Trade {} settlement idempotency check: {}", trade.tradeId(), e.getMessage());
+            return false;
+        }
 
         if (inserted == 0) {
             log.info("Trade {} has already been settled. Skipping settlement (idempotent no-op).", trade.tradeId());
@@ -91,8 +100,10 @@ public class LedgerServiceImpl implements LedgerService {
 
         // 9 & 11. Update buyer: Debit USD, Credit BTC, Unreserve Cash
         int buyerUpdated = jdbcTemplate.update(
-                "UPDATE accounts SET cash_balance = cash_balance - ?, asset_balance = asset_balance + ?, reserved_cash = GREATEST(0.00, reserved_cash - ?) WHERE user_id = ?",
-                totalUsdValue, tradeQty, totalUsdValue, trade.buyerId()
+                "UPDATE accounts SET cash_balance = cash_balance - ?, asset_balance = asset_balance + ?, " +
+                        "reserved_cash = CASE WHEN COALESCE(reserved_cash, 0) - ? < 0 THEN 0 ELSE COALESCE(reserved_cash, 0) - ? END " +
+                        "WHERE user_id = ?",
+                totalUsdValue, tradeQty, totalUsdValue, totalUsdValue, trade.buyerId()
         );
         if (buyerUpdated != 1) {
             throw new IllegalStateException("Failed to update balances for buyer: " + trade.buyerId());
@@ -100,18 +111,16 @@ public class LedgerServiceImpl implements LedgerService {
 
         // 10 & 12. Update seller: Credit USD, Debit BTC, Unreserve Asset
         int sellerUpdated = jdbcTemplate.update(
-                "UPDATE accounts SET cash_balance = cash_balance + ?, asset_balance = asset_balance - ?, reserved_asset = GREATEST(0.00000000, reserved_asset - ?) WHERE user_id = ?",
-                totalUsdValue, tradeQty, tradeQty, trade.sellerId()
+                "UPDATE accounts SET cash_balance = cash_balance + ?, asset_balance = asset_balance - ?, " +
+                        "reserved_asset = CASE WHEN COALESCE(reserved_asset, 0) - ? < 0 THEN 0 ELSE COALESCE(reserved_asset, 0) - ? END " +
+                        "WHERE user_id = ?",
+                totalUsdValue, tradeQty, tradeQty, tradeQty, trade.sellerId()
         );
         if (sellerUpdated != 1) {
             throw new IllegalStateException("Failed to update balances for seller: " + trade.sellerId());
         }
 
-        // 13. Insert exactly four ledger entries
-        // 1) Buyer USD debit (-totalUsdValue)
-        // 2) Seller USD credit (+totalUsdValue)
-        // 3) Seller BTC debit (-tradeQty)
-        // 4) Buyer BTC credit (+tradeQty)
+        // 13. Insert exactly four double-entry ledger entries
         jdbcTemplate.batchUpdate(
                 "INSERT INTO ledger_entries (trade_id, user_id, currency, amount, created_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)",
                 List.of(
@@ -122,11 +131,9 @@ public class LedgerServiceImpl implements LedgerService {
                 )
         );
 
-        log.info("Successfully settled trade {} between buyer {} and seller {} for {} BTC at ${}",
+        log.info("Successfully settled trade {} between buyer {} and seller {} for {} units at ${}",
                 trade.tradeId(), trade.buyerId(), trade.sellerId(), tradeQty, trade.price());
 
-        // The listener persists notifications only AFTER this transaction commits.
-        // If settlement rolls back, no trade-settled notification is created.
         eventPublisher.publishEvent(new TradeSettledEvent(
                 trade.tradeId(), trade.buyerId(), trade.sellerId(), trade.price(), trade.qty(), java.time.Instant.now()));
         return true;
