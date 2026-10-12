@@ -43,6 +43,7 @@ public class LedgerServiceTest {
     @BeforeEach
     void setUp() {
         // Clean up tables between test runs to ensure independent test isolation
+        jdbcTemplate.execute("DELETE FROM notifications");
         jdbcTemplate.execute("DELETE FROM ledger_entries");
         jdbcTemplate.execute("DELETE FROM settlements");
         jdbcTemplate.execute("DELETE FROM accounts");
@@ -100,6 +101,17 @@ public class LedgerServiceTest {
         List<Map<String, Object>> entries = jdbcTemplate.queryForList(
                 "SELECT * FROM ledger_entries WHERE trade_id = 'T-100' ORDER BY id ASC");
         assertThat(entries).hasSize(4);
+
+        // Member 4: one confirmation notification for buyer and seller.
+        Integer notificationCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM notifications WHERE trade_id = 'T-100'", Integer.class);
+        assertThat(notificationCount).isEqualTo(2);
+        Integer aliceNotifications = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM notifications WHERE trade_id = 'T-100' AND user_id = 'alice'", Integer.class);
+        Integer bobNotifications = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM notifications WHERE trade_id = 'T-100' AND user_id = 'bob'", Integer.class);
+        assertThat(aliceNotifications).isEqualTo(1);
+        assertThat(bobNotifications).isEqualTo(1);
     }
 
     @Test
@@ -129,6 +141,11 @@ public class LedgerServiceTest {
         Integer ledgerCount = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM ledger_entries WHERE trade_id = 'T-DUP-1'", Integer.class);
         assertThat(ledgerCount).isEqualTo(4);
+
+        // Repeated settlement must not emit duplicate trade notifications.
+        Integer notificationCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM notifications WHERE trade_id = 'T-DUP-1'", Integer.class);
+        assertThat(notificationCount).isEqualTo(2);
     }
 
     @Test
@@ -143,6 +160,10 @@ public class LedgerServiceTest {
         assertThatThrownBy(() -> ledgerService.settle(trade))
                 .isInstanceOf(InsufficientBalanceException.class)
                 .hasMessageContaining("insufficient USD");
+
+        Integer failedTradeNotifications = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM notifications WHERE trade_id = 'T-FAIL-USD'", Integer.class);
+        assertThat(failedTradeNotifications).isZero();
 
         // Verify balances untouched
         Account alice = getAccount("alice");
