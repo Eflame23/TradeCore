@@ -28,12 +28,12 @@ public class RiskProperties {
 
     /**
      * Maximum number of order submissions allowed per user within the rate limit window.
-     * Defaults to 1000.
+     * Defaults to 30 requests per minute.
      */
-    private int rateLimitCapacity = 1000;
+    private int rateLimitCapacity = 30;
 
     /**
-     * Window duration in seconds for the rate limiter. Defaults to 60 seconds (1 minute).
+     * Window duration in seconds for the rate limiter. Defaults to 60 seconds.
      */
     private long rateLimitWindowSeconds = 60L;
 

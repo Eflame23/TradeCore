@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TradeCore Terminal — Institutional Trading Platform</title>
+    <title>TradeCore</title>
     <!-- Google Fonts Open Sans & JetBrains Mono -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -61,7 +61,7 @@
 
         /* Top Header */
         header { height: 48px; background-color: var(--panel-bg); border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; padding: 0 16px; position: sticky; top: 0; z-index: 100; }
-        .brand-title { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 15px; letter-spacing: 0.6px; color: var(--text-primary); }
+        .brand-title { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 16px; letter-spacing: 0.6px; color: var(--text-primary); }
 
         .ticker-marquee { display: flex; align-items: center; gap: 12px; font-weight: 600; font-size: 12px; overflow-x: auto; scrollbar-width: none; }
         .ticker-marquee::-webkit-scrollbar { display: none; }
@@ -70,7 +70,7 @@
         .price-up { color: var(--buy-green); }
         .price-down { color: var(--sell-red); }
 
-        .header-actions { display: flex; align-items: center; gap: 10px; }
+        .header-actions { display: flex; align-items: center; gap: 12px; }
         .btn { padding: 6px 12px; border-radius: 4px; font-weight: 600; font-size: 12px; border: none; cursor: pointer; transition: all 0.15s ease; display: inline-flex; align-items: center; gap: 6px; }
         .btn-theme { background-color: var(--panel-hover); color: var(--text-primary); border: 1px solid var(--border-color); }
         .btn-buy { background-color: var(--buy-green); color: #fff; }
@@ -192,7 +192,7 @@
     <header>
         <div class="brand-title">
             <svg class="icon icon-lg" viewBox="0 0 24 24"><path d="M3.5 18.5l6-6 4 4 7-7M20.5 9.5v-4h-4"/></svg>
-            TradeCore Terminal
+            TradeCore
         </div>
 
         <div class="ticker-marquee" id="tickerMarquee">
@@ -200,8 +200,6 @@
         </div>
 
         <div class="header-actions">
-            <span style="font-size:11px; color:var(--text-secondary);">🟢 12ms</span>
-
             <label for="userSelect" style="font-weight: 600; font-size: 11px;">ACCOUNT:</label>
             <select id="userSelect" onchange="switchUser(this.value)">
                 <option value="alice">Alice (Trader)</option>
@@ -434,7 +432,7 @@
                 <div style="margin-bottom:16px; background:var(--input-bg); border:1px solid var(--border-color); padding:12px; border-radius:6px;">
                     <div style="display:flex; justify-content:space-between; font-size:11px; font-weight:700; color:var(--text-secondary); margin-bottom:6px;">
                         <span>PORTFOLIO ASSET ALLOCATION</span>
-                        <span id="allocationRatio">100% Cash / 0% Holdings</span>
+                        <span id="allocationRatio">100.0% Cash / 0.0% Asset Holdings</span>
                     </div>
                     <div style="height:10px; width:100%; background:var(--border-color); border-radius:5px; overflow:hidden; display:flex;">
                         <div id="allocCashBar" style="width:100%; background:var(--accent-blue); height:100%; transition:width 0.3s;"></div>
@@ -554,6 +552,7 @@
         let referencePrice = 50250.00;
         let allInstruments = [];
         let previousPrices = {};
+        let recentTradeList = [];
 
         // Interactive Toast Notification System
         function showToast(message, type = 'info', title = '') {
@@ -926,7 +925,7 @@
 
         async function fetchAudits() {
             try {
-                const res = await fetch('/api/audit/trades?limit=15');
+                const res = await fetch('/api/audit/trades?limit=20');
                 if (res.ok) {
                     const data = await res.json();
                     const tbody = document.getElementById('auditTable');
@@ -950,9 +949,11 @@
                             tbody.appendChild(tr);
 
                             const tr2 = document.createElement('tr');
+                            const isBuy = a.buyerId === currentUser;
+                            const priceColor = isBuy ? 'var(--buy-green)' : 'var(--sell-red)';
                             tr2.innerHTML = `
                                 <td>${new Date(a.createdAt).toLocaleTimeString()}</td>
-                                <td style="color:var(--buy-green); font-weight:700;">$${parseFloat(a.price).toFixed(2)}</td>
+                                <td style="color:${priceColor}; font-weight:700;">$${parseFloat(a.price).toFixed(2)}</td>
                                 <td>${a.qty}</td>
                             `;
                             recentTbody.appendChild(tr2);
@@ -960,15 +961,16 @@
                     } else {
                         const now = new Date();
                         const sampleTrades = [
-                            { time: now.toLocaleTimeString(), price: referencePrice.toFixed(2), qty: 1 },
-                            { time: new Date(now - 12000).toLocaleTimeString(), price: (referencePrice - 5).toFixed(2), qty: 2 },
-                            { time: new Date(now - 28000).toLocaleTimeString(), price: (referencePrice + 10).toFixed(2), qty: 1 }
+                            { time: now.toLocaleTimeString(), price: referencePrice.toFixed(2), qty: 1, side: 'BUY' },
+                            { time: new Date(now - 8000).toLocaleTimeString(), price: (referencePrice - 2.5).toFixed(2), qty: 2, side: 'SELL' },
+                            { time: new Date(now - 16000).toLocaleTimeString(), price: (referencePrice + 4.0).toFixed(2), qty: 1, side: 'BUY' }
                         ];
                         sampleTrades.forEach(st => {
                             const tr2 = document.createElement('tr');
+                            const color = st.side === 'BUY' ? 'var(--buy-green)' : 'var(--sell-red)';
                             tr2.innerHTML = `
                                 <td>${st.time}</td>
-                                <td style="color:var(--buy-green); font-weight:700;">$${st.price}</td>
+                                <td style="color:${color}; font-weight:700;">$${st.price}</td>
                                 <td>${st.qty}</td>
                             `;
                             recentTbody.appendChild(tr2);
@@ -1023,7 +1025,7 @@
 
                     // Calculate Allocation Ratios
                     const cashPct = equity > 0 ? Math.min(100, Math.max(0, (cash / equity) * 100)) : 100;
-                    const assetPct = 100 - cashPct;
+                    const assetPct = Math.max(0, 100 - cashPct);
 
                     document.getElementById('allocationRatio').innerText = `${cashPct.toFixed(1)}% Cash / ${assetPct.toFixed(1)}% Asset Holdings`;
                     document.getElementById('allocCashBar').style.width = `${cashPct}%`;
@@ -1035,7 +1037,7 @@
 
                     const trCash = document.createElement('tr');
                     trCash.innerHTML = `
-                        <td><strong>USD Cash</strong></td>
+                        <td><strong>USD Cash Balance</strong></td>
                         <td>$${cash.toLocaleString('en-US', {minimumFractionDigits:2})}</td>
                         <td>$1.00</td>
                         <td>$${cash.toLocaleString('en-US', {minimumFractionDigits:2})}</td>
@@ -1046,7 +1048,7 @@
                     if (assetQty > 0) {
                         const trAsset = document.createElement('tr');
                         trAsset.innerHTML = `
-                            <td><strong>${currentSymbol} Holdings</strong></td>
+                            <td><strong>${currentSymbol} Asset Holdings</strong></td>
                             <td>${assetQty.toFixed(4)}</td>
                             <td>$${parseFloat(p.marketPrice).toFixed(2)}</td>
                             <td>$${assetVal.toLocaleString('en-US', {minimumFractionDigits:2})}</td>
@@ -1176,7 +1178,7 @@
                 loadTradingViewChart('BINANCE:BTCUSDT');
             }, 300);
 
-            // Frequent 2s Poll for Live Market Tickers & OrderBook
+            // Frequent 1s Poll for Realtime Market Data, Portfolio & Recent Trades
             setInterval(() => {
                 fetchInstruments();
                 fetchWallet();
@@ -1184,7 +1186,7 @@
                 fetchUserOrders();
                 fetchAudits();
                 fetchPortfolio();
-            }, 2000);
+            }, 1000);
         });
     </script>
 </body>
