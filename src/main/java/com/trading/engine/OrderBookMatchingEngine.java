@@ -3,6 +3,8 @@ package com.trading.engine;
 import com.trading.common.Order;
 import com.trading.common.Trade;
 
+import org.springframework.stereotype.Service;
+
 import java.util.List;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -15,6 +17,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * preserves arrival order (time priority). Real exchanges go further with a
  * single-threaded event loop (LMAX Disruptor style).
  */
+@Service
 public class OrderBookMatchingEngine implements MatchingEngine {
 
     private final OrderBook book = new OrderBook();
