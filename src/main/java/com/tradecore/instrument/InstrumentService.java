@@ -25,17 +25,18 @@ public class InstrumentService {
     private final Map<String, Instrument> catalog = new ConcurrentHashMap<>();
     private final HttpClient httpClient;
     private final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
+    private final Random random = new Random();
 
     public InstrumentService() {
         this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(4))
+                .connectTimeout(Duration.ofSeconds(3))
                 .build();
 
         // Seed initial market instruments
         seedDefaultCatalog();
 
-        // Schedule periodic real-time live price fetching from market APIs
-        executor.scheduleWithFixedDelay(this::fetchLiveMarketData, 0, 10, TimeUnit.SECONDS);
+        // Schedule continuous real-time live price ticks every 1 second
+        executor.scheduleWithFixedDelay(this::tickLivePrices, 0, 1, TimeUnit.SECONDS);
     }
 
     private void seedDefaultCatalog() {
@@ -84,35 +85,40 @@ public class InstrumentService {
         ));
     }
 
-    private void fetchLiveMarketData() {
+    private void tickLivePrices() {
         try {
-            // Fetch live crypto prices from Binance public 24hr ticker endpoint
+            // 1. Fetch live REST tickers from Binance for crypto pairs
+            fetchBinanceTickers();
+
+            // 2. Simulate active order flow and live price movement ticks for Stocks and Commodities
+            simulateStockAndCommodityTicks();
+        } catch (Exception e) {
+            log.debug("Notice: Live market price tick error: {}", e.getMessage());
+        }
+    }
+
+    private void fetchBinanceTickers() {
+        try {
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create("https://api.binance.com/api/v3/ticker/24hr"))
-                    .timeout(Duration.ofSeconds(3))
+                    .timeout(Duration.ofSeconds(2))
                     .GET()
                     .build();
 
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() == 200 && response.body() != null) {
-                parseBinanceTickers(response.body());
+                String json = response.body();
+                updateCryptoPrice("BTC-USD", "BTCUSDT", json);
+                updateCryptoPrice("ETH-USD", "ETHUSDT", json);
+                updateCryptoPrice("SOL-USD", "SOLUSDT", json);
+                updateCryptoPrice("XRP-USD", "XRPUSDT", json);
+                updateCryptoPrice("DOGE-USD", "DOGEUSDT", json);
+                updateCryptoPrice("ADA-USD", "ADAUSDT", json);
+                updateCryptoPrice("AVAX-USD", "AVAXUSDT", json);
+                updateCryptoPrice("LINK-USD", "LINKUSDT", json);
+                updateCryptoPrice("DOT-USD", "DOTUSDT", json);
             }
-        } catch (Exception e) {
-            log.debug("Notice: Binance market price refresh: {}", e.getMessage());
-        }
-    }
-
-    private void parseBinanceTickers(String json) {
-        // Quick string parsing for BTC, ETH, SOL tickers from Binance JSON response
-        updateCryptoPrice("BTC-USD", "BTCUSDT", json);
-        updateCryptoPrice("ETH-USD", "ETHUSDT", json);
-        updateCryptoPrice("SOL-USD", "SOLUSDT", json);
-        updateCryptoPrice("XRP-USD", "XRPUSDT", json);
-        updateCryptoPrice("DOGE-USD", "DOGEUSDT", json);
-        updateCryptoPrice("ADA-USD", "ADAUSDT", json);
-        updateCryptoPrice("AVAX-USD", "AVAXUSDT", json);
-        updateCryptoPrice("LINK-USD", "LINKUSDT", json);
-        updateCryptoPrice("DOT-USD", "DOTUSDT", json);
+        } catch (Exception ignored) {}
     }
 
     private void updateCryptoPrice(String symbol, String binancePair, String json) {
@@ -148,6 +154,30 @@ public class InstrumentService {
                 }
             }
         } catch (Exception ignored) {}
+    }
+
+    private void simulateStockAndCommodityTicks() {
+        catalog.values().forEach(inst -> {
+            if ("EQUITY".equals(inst.category()) || "COMMODITY".equals(inst.category())) {
+                // Apply a small random tick movement (-0.15% to +0.15%)
+                double pctChange = (random.nextDouble() - 0.49) * 0.003;
+                BigDecimal currentPrice = inst.price();
+                BigDecimal delta = currentPrice.multiply(BigDecimal.valueOf(pctChange));
+                BigDecimal newPrice = currentPrice.add(delta).setScale(2, RoundingMode.HALF_UP);
+
+                if (newPrice.signum() > 0) {
+                    BigDecimal newHigh = newPrice.max(inst.high24h());
+                    BigDecimal newLow = newPrice.min(inst.low24h());
+                    BigDecimal newChange = inst.changePercent().add(BigDecimal.valueOf(pctChange * 100)).setScale(2, RoundingMode.HALF_UP);
+                    BigDecimal newVol = inst.volume24h().add(BigDecimal.valueOf(random.nextInt(10) + 1));
+
+                    catalog.put(inst.symbol(), new Instrument(
+                            inst.symbol(), inst.tvSymbol(), inst.name(), inst.category(),
+                            newPrice, newChange, newVol, newHigh, newLow
+                    ));
+                }
+            }
+        });
     }
 
     private String extractJsonValue(String json, int startPos) {
