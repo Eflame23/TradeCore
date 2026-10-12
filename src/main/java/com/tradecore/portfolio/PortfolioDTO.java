@@ -9,6 +9,7 @@ public record PortfolioDTO(
         BigDecimal marketPrice,
         BigDecimal assetValueUsd,
         BigDecimal totalEquity,
+        BigDecimal initialCapital,
         BigDecimal pnlAmount,
         BigDecimal pnlPercentage
 ) {}

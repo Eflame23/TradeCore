@@ -1010,18 +1010,23 @@
                 if (res.ok) {
                     const p = await res.json();
                     const cash = parseFloat(p.cashBalance) || 0;
-                    const equity = parseFloat(p.totalEquity) || cash;
-                    const assetVal = parseFloat(p.assetValueUsd) || 0;
-                    const pnl = parseFloat(p.pnlAmount) || 0;
-                    const pnlPct = parseFloat(p.pnlPercentage) || 0;
                     const assetQty = parseFloat(p.assetBalance) || 0;
+                    const livePrice = referencePrice || parseFloat(p.marketPrice) || 50250.00;
+
+                    const assetVal = assetQty * livePrice;
+                    const equity = cash + assetVal;
+
+                    const initialCapital = parseFloat(p.initialCapital) || 1502500.00;
+                    const pnl = equity - initialCapital;
+                    const pnlPct = initialCapital > 0 ? (pnl / initialCapital) * 100 : 0;
 
                     document.getElementById('portCashCard').innerText = '$' + cash.toLocaleString('en-US', {minimumFractionDigits:2});
                     document.getElementById('portEquityCard').innerText = '$' + equity.toLocaleString('en-US', {minimumFractionDigits:2});
                     document.getElementById('portAssetCard').innerText = '$' + assetVal.toLocaleString('en-US', {minimumFractionDigits:2});
 
                     const pnlColor = pnl >= 0 ? 'var(--buy-green)' : 'var(--sell-red)';
-                    document.getElementById('portPnlCard').innerHTML = `<span style="color:${pnlColor}; font-weight:800;">$${pnl.toFixed(2)} (${pnlPct.toFixed(2)}%)</span>`;
+                    const pnlSign = pnl >= 0 ? '+' : '';
+                    document.getElementById('portPnlCard').innerHTML = `<span style="color:${pnlColor}; font-weight:800;">${pnlSign}$${pnl.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})} (${pnlSign}${pnlPct.toFixed(2)}%)</span>`;
 
                     // Calculate Allocation Ratios
                     const cashPct = equity > 0 ? Math.min(100, Math.max(0, (cash / equity) * 100)) : 100;
@@ -1050,7 +1055,7 @@
                         trAsset.innerHTML = `
                             <td><strong>${currentSymbol} Asset Holdings</strong></td>
                             <td>${assetQty.toFixed(4)}</td>
-                            <td>$${parseFloat(p.marketPrice).toFixed(2)}</td>
+                            <td>$${livePrice.toFixed(2)}</td>
                             <td>$${assetVal.toLocaleString('en-US', {minimumFractionDigits:2})}</td>
                             <td><span class="badge-status status-filled">${assetPct.toFixed(1)}%</span></td>
                         `;

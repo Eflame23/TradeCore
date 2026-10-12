@@ -2,6 +2,7 @@ package com.tradecore.portfolio;
 
 import com.tradecore.ledger.model.WalletDTO;
 import com.tradecore.ledger.service.WalletService;
+import com.trading.engine.InstrumentMatchingEngineManager;
 import com.trading.engine.MatchingEngine;
 import com.trading.engine.OrderBookMatchingEngine;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -24,9 +25,11 @@ public class PortfolioService {
         this.matchingEngine = matchingEngine;
     }
 
-    public BigDecimal getMarketPrice() {
-        if (matchingEngine instanceof OrderBookMatchingEngine engine) {
-            var snapshot = engine.snapshot();
+    public BigDecimal getMarketPrice(String symbol) {
+        String sym = (symbol == null || symbol.isBlank()) ? "BTC-USD" : symbol.trim().toUpperCase();
+        
+        if (matchingEngine instanceof InstrumentMatchingEngineManager manager) {
+            var snapshot = manager.snapshot(sym);
             if (!snapshot.asks().isEmpty() && !snapshot.bids().isEmpty()) {
                 BigDecimal bestAsk = snapshot.asks().get(0).price();
                 BigDecimal bestBid = snapshot.bids().get(0).price();
@@ -36,6 +39,13 @@ public class PortfolioService {
             } else if (!snapshot.bids().isEmpty()) {
                 return snapshot.bids().get(0).price();
             }
+        } else if (matchingEngine instanceof OrderBookMatchingEngine engine) {
+            var snapshot = engine.snapshot();
+            if (!snapshot.asks().isEmpty() && !snapshot.bids().isEmpty()) {
+                BigDecimal bestAsk = snapshot.asks().get(0).price();
+                BigDecimal bestBid = snapshot.bids().get(0).price();
+                return bestAsk.add(bestBid).divide(new BigDecimal("2"), 2, RoundingMode.HALF_UP);
+            }
         }
 
         // Query last trade price from database
@@ -44,19 +54,24 @@ public class PortfolioService {
                 (rs, rowNum) -> rs.getBigDecimal("price")
         );
 
-        return lastPrices.isEmpty() ? new BigDecimal("50000.00") : lastPrices.get(0);
+        return lastPrices.isEmpty() ? new BigDecimal("50250.00") : lastPrices.get(0);
+    }
+
+    public BigDecimal getMarketPrice() {
+        return getMarketPrice("BTC-USD");
     }
 
     public PortfolioDTO getPortfolio(String userId) {
         WalletDTO wallet = walletService.getWallet(userId);
-        BigDecimal marketPrice = getMarketPrice();
+        BigDecimal marketPrice = getMarketPrice("BTC-USD");
         BigDecimal assetValue = wallet.assetBalance().multiply(marketPrice);
         BigDecimal totalEquity = wallet.cashBalance().add(assetValue);
 
-        BigDecimal initialBalance = new BigDecimal("10000.00").add(new BigDecimal("1.00").multiply(marketPrice));
-        BigDecimal pnlAmount = totalEquity.subtract(initialBalance);
-        BigDecimal pnlPercentage = initialBalance.signum() > 0
-                ? pnlAmount.divide(initialBalance, 4, RoundingMode.HALF_UP).multiply(new BigDecimal("100"))
+        // Standard seed capital baseline ($1,000,000 cash + 10 BTC * market price)
+        BigDecimal initialCapital = new BigDecimal("1000000.00").add(new BigDecimal("10.00").multiply(marketPrice));
+        BigDecimal pnlAmount = totalEquity.subtract(initialCapital);
+        BigDecimal pnlPercentage = initialCapital.signum() > 0
+                ? pnlAmount.divide(initialCapital, 6, RoundingMode.HALF_UP).multiply(new BigDecimal("100")).setScale(2, RoundingMode.HALF_UP)
                 : BigDecimal.ZERO;
 
         return new PortfolioDTO(
@@ -66,6 +81,7 @@ public class PortfolioService {
                 marketPrice,
                 assetValue,
                 totalEquity,
+                initialCapital,
                 pnlAmount,
                 pnlPercentage
         );
